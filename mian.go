@@ -26,6 +26,7 @@ func (m myElector) IsLeader(_ context.Context) error {
 }
 
 func main() {
+	
 	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
 
 	for i := 0; i < 3; i++ {
