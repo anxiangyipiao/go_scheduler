@@ -1,49 +1,72 @@
 package main
 
 import (
+	"context"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/go-co-op/gocron/v2"
 )
 
+var _ gocron.Elector = (*myElector)(nil)
+
+type myElector struct {
+	num    int
+	leader bool
+}
+
+func (m myElector) IsLeader(_ context.Context) error {
+	if m.leader {
+		log.Printf("node %d is leader", m.num)
+		return nil
+	}
+	log.Printf("node %d is not leader", m.num)
+	return fmt.Errorf("not leader")
+}
+
 func main() {
-	// create a scheduler
-	s, err := gocron.NewScheduler()
-	if err != nil {
-		// handle error
+	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
+
+	for i := 0; i < 3; i++ {
+		go func(i int) {
+			elector := &myElector{
+				num: i,
+			}
+			if i == 0 {
+				elector.leader = true
+			}
+
+			scheduler, err := gocron.NewScheduler(
+				gocron.WithDistributedElector(elector),
+			)
+			if err != nil {
+				log.Println(err)
+				return
+			}
+
+			_, err = scheduler.NewJob(
+				gocron.DurationJob(time.Second),
+				gocron.NewTask(func() {
+					log.Println("run job")
+				}),
+			)
+			if err != nil {
+				log.Println(err)
+				return
+			}
+			scheduler.Start()
+
+			if i == 0 {
+				time.Sleep(5 * time.Second)
+				elector.leader = false
+			}
+			if i == 1 {
+				time.Sleep(5 * time.Second)
+				elector.leader = true
+			}
+		}(i)
 	}
 
-	// add a job to the scheduler
-	j, err := s.NewJob(
-		gocron.DurationJob(
-			10*time.Second,
-		),
-		gocron.NewTask(
-			func(a string, b int) {
-				// do things
-			},
-			"hello",
-			1,
-		),
-	)
-	if err != nil {
-		// handle error
-	}
-	// each job has a unique id
-	fmt.Println(j.ID())
-
-	// start the scheduler
-	s.Start()
-
-	// block until you are ready to shut down
-	select {
-	case <-time.After(time.Minute):
-	}
-
-	// when you're done, shut it down
-	err = s.Shutdown()
-	if err != nil {
-		// handle error
-	}
+	select {} // wait forever
 }
